@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PhotoboothRoom } from "@/components/PhotoboothRoom";
 import { usePhotoboothPeer } from "@/hooks/usePhotoboothPeer";
@@ -22,6 +22,10 @@ describe("PhotoboothRoom", () => {
   beforeEach(() => {
     sendMessage.mockClear();
     mockConnectedPeer();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it("renders room details and video panels", async () => {
@@ -51,7 +55,48 @@ describe("PhotoboothRoom", () => {
     expect(sendMessage).toHaveBeenCalledWith({
       type: "capture:start",
       at: expect.any(Number),
+      reset: true,
     });
+  });
+
+  it("shows host controls to retake or continue after a shot is captured", async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+
+    await user.click(await screen.findByRole("button", { name: /start capture/i }));
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+
+    expect(await screen.findByRole("button", { name: "ถ่ายใหม่อีกครั้ง" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "ถ่ายต่อ" })).toBeEnabled();
+    expect(screen.getByAltText(/preview shot 1/i)).toBeInTheDocument();
+  });
+
+  it("moves to host frame selection after the fourth accepted shot", async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+
+    await user.click(await screen.findByRole("button", { name: /start capture/i }));
+
+    for (let index = 0; index < 3; index += 1) {
+      await act(async () => {
+        jest.advanceTimersByTime(5000);
+      });
+      await user.click(await screen.findByRole("button", { name: "ถ่ายต่อ" }));
+    }
+
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    await user.click(await screen.findByRole("button", { name: "เสร็จสิ้น" }));
+
+    expect(await screen.findByRole("heading", { name: /choose frame style/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /classic rose/i }));
+    expect(sendMessage).toHaveBeenCalledWith({ type: "frame:selected", styleId: "classic" });
   });
 
   it("shows an error when camera permissions are denied", async () => {

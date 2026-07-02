@@ -10,7 +10,16 @@ type PhotoboothRoomProps = {
   roomCode: string;
 };
 
-type CaptureState = "idle" | "countdown" | "shooting" | "complete";
+type CaptureState = "idle" | "countdown" | "shooting" | "review" | "framing" | "complete";
+type NextStep = "capture" | "frame";
+type FrameStyle = {
+  id: string;
+  name: string;
+  background: string;
+  mat: string;
+  accent: string;
+  text: string;
+};
 
 const countdownSeconds = 3;
 const shotCount = 4;
@@ -20,6 +29,12 @@ const pairHeight = 560;
 const stripPadding = 48;
 const stripGap = 28;
 const titleFont = { fontFamily: '"Bodoni MT", "Bodoni 72", Didot, Georgia, "Times New Roman", serif' };
+const frameStyles: FrameStyle[] = [
+  { id: "classic", name: "Classic Rose", background: "#fff6f3", mat: "#ffffff", accent: "#7b1e2b", text: "#705066" },
+  { id: "midnight", name: "Midnight", background: "#241820", mat: "#fffaf7", accent: "#d9adbd", text: "#fff8f4" },
+  { id: "film", name: "Film Strip", background: "#f5f0e8", mat: "#161616", accent: "#a23d4f", text: "#3d332d" },
+  { id: "soft", name: "Soft Bloom", background: "#f8eef3", mat: "#ffffff", accent: "#8f6aa8", text: "#5d466c" },
+];
 
 export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -30,6 +45,8 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [countdown, setCountdown] = useState<number | null>(null);
   const [shots, setShots] = useState<string[]>([]);
+  const [pendingShot, setPendingShot] = useState<string | null>(null);
+  const [selectedFrameId, setSelectedFrameId] = useState(frameStyles[0].id);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -94,7 +111,7 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     context.drawImage(video, sourceX, sourceY, cropWidth, cropHeight, x, y, width, height);
   };
 
-  const buildStrip = useCallback(async (capturedShots: string[]) => {
+  const buildStrip = useCallback(async (capturedShots: string[], frameStyle: FrameStyle) => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
 
@@ -106,9 +123,11 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     canvas.width = stripWidth;
     canvas.height = stripHeight;
 
-    context.fillStyle = "#fff6f3";
+    context.fillStyle = frameStyle.background;
     context.fillRect(0, 0, stripWidth, stripHeight);
-    context.fillStyle = "#7b1e2b";
+    context.fillStyle = frameStyle.accent;
+    context.fillRect(0, 0, stripWidth, 84);
+    context.fillStyle = frameStyle.text;
     context.font = "600 34px Georgia";
     context.textAlign = "center";
     context.fillText("LDR PHOTOBOOTH", stripWidth / 2, 50);
@@ -126,13 +145,14 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
 
     images.forEach((image, index) => {
       const y = stripPadding + 34 + index * (pairHeight + stripGap);
-      context.fillStyle = "#ffffff";
-      context.fillRect(stripPadding, y, stripWidth - stripPadding * 2, pairHeight);
+      context.fillStyle = frameStyle.mat;
+      context.fillRect(stripPadding - 14, y - 14, stripWidth - stripPadding * 2 + 28, pairHeight + 28);
       context.drawImage(image, stripPadding, y, stripWidth - stripPadding * 2, pairHeight);
     });
 
-    context.fillStyle = "#705066";
+    context.fillStyle = frameStyle.text;
     context.font = "500 22px Arial";
+    context.fillText(frameStyle.name, stripWidth / 2, stripHeight - 64);
     context.fillText(new Date().toLocaleDateString(), stripWidth / 2, stripHeight - 32);
     setDownloadUrl(canvas.toDataURL("image/png"));
   }, []);
@@ -165,30 +185,29 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     return canvas.toDataURL("image/png");
   }, []);
 
-  const runCaptureSequence = useCallback(async () => {
+  const takeCurrentShot = useCallback(async () => {
     setCaptureState("shooting");
-    setShots([]);
-    setDownloadUrl(null);
+    setPendingShot(null);
 
-    const nextShots: string[] = [];
-    for (let index = 0; index < shotCount; index += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, index === 0 ? 120 : shotDelayMs));
-      const shot = captureOneShot();
-      if (shot) {
-        nextShots.push(shot);
-        setShots([...nextShots]);
-      }
+    await new Promise((resolve) => window.setTimeout(resolve, shotDelayMs));
+    const shot = captureOneShot();
+    if (shot) {
+      setPendingShot(shot);
     }
-
-    await buildStrip(nextShots);
-    setCaptureState("complete");
-  }, [buildStrip, captureOneShot]);
+    setCaptureState("review");
+  }, [captureOneShot]);
 
   const startCountdown = useCallback(
-    (startAt: number) => {
+    (startAt: number, reset = false) => {
+      if (reset) {
+        setShots([]);
+        setDownloadUrl(null);
+        setSelectedFrameId(frameStyles[0].id);
+      }
+
       setCaptureState("countdown");
       setDownloadUrl(null);
-      setShots([]);
+      setPendingShot(null);
 
       const tick = () => {
         const remaining = Math.ceil((startAt - Date.now()) / 1000);
@@ -196,7 +215,7 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
 
         if (remaining <= 0) {
           setCountdown(null);
-          runCaptureSequence();
+          takeCurrentShot();
           return;
         }
 
@@ -205,16 +224,55 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
 
       tick();
     },
-    [runCaptureSequence],
+    [takeCurrentShot],
+  );
+
+  const acceptPendingShot = useCallback(
+    (next: NextStep, at?: number) => {
+      if (!pendingShot) {
+        return;
+      }
+
+      const acceptedShots = [...shots, pendingShot];
+      setShots(acceptedShots);
+      setPendingShot(null);
+
+      if (next === "capture" && at) {
+        startCountdown(at);
+        return;
+      }
+
+      setCaptureState("framing");
+    },
+    [pendingShot, shots, startCountdown],
+  );
+
+  const applyFrameStyle = useCallback(
+    (styleId: string) => {
+      const frameStyle = frameStyles.find((style) => style.id === styleId) ?? frameStyles[0];
+      setSelectedFrameId(frameStyle.id);
+      setCaptureState("complete");
+      buildStrip(shots, frameStyle);
+    },
+    [buildStrip, shots],
   );
 
   const handlePeerMessage = useCallback(
     (message: PeerMessage) => {
       if (message.type === "capture:start") {
+        startCountdown(message.at, message.reset);
+      }
+      if (message.type === "capture:retake") {
         startCountdown(message.at);
       }
+      if (message.type === "capture:accept") {
+        acceptPendingShot(message.next, message.at);
+      }
+      if (message.type === "frame:selected") {
+        applyFrameStyle(message.styleId);
+      }
     },
-    [startCountdown],
+    [acceptPendingShot, applyFrameStyle, startCountdown],
   );
 
   const { status, error, isHost, remoteStream, sendMessage } = usePhotoboothPeer({
@@ -231,11 +289,36 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
 
   const startCapture = () => {
     const at = Date.now() + countdownSeconds * 1000 + 600;
-    sendMessage({ type: "capture:start", at });
+    sendMessage({ type: "capture:start", at, reset: true });
+    startCountdown(at, true);
+  };
+
+  const retakeShot = () => {
+    const at = Date.now() + countdownSeconds * 1000 + 600;
+    sendMessage({ type: "capture:retake", at });
     startCountdown(at);
   };
 
-  const canCapture = status === "connected" && captureState !== "countdown" && captureState !== "shooting";
+  const continueToNextShot = () => {
+    const at = Date.now() + countdownSeconds * 1000 + 600;
+    sendMessage({ type: "capture:accept", next: "capture", at });
+    acceptPendingShot("capture", at);
+  };
+
+  const finishCapture = () => {
+    sendMessage({ type: "capture:accept", next: "frame" });
+    acceptPendingShot("frame");
+  };
+
+  const selectFrame = (styleId: string) => {
+    sendMessage({ type: "frame:selected", styleId });
+    applyFrameStyle(styleId);
+  };
+
+  const canCapture = status === "connected" && (captureState === "idle" || captureState === "complete");
+  const acceptedCount = shots.length;
+  const currentShotNumber = Math.min(acceptedCount + 1, shotCount);
+  const isLastPendingShot = acceptedCount + 1 >= shotCount;
 
   return (
     <main className="relative isolate min-h-screen overflow-hidden bg-[#f8eceb] px-5 py-8 text-[#29151d] md:px-10 md:py-10">
@@ -289,7 +372,7 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
               Four-cut session
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#684a57]">
-              The countdown starts on both screens, then four paired frames are captured into one vertical strip.
+              The countdown starts on both screens. Review each shot, then continue, retake, or finish after the fourth shot.
             </p>
           </div>
           <button
@@ -301,6 +384,98 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
             Start Capture
           </button>
         </section>
+
+        {captureState === "review" && pendingShot && (
+          <section className="grid gap-6 rounded-[32px] border border-[#9a3445]/25 bg-[#fffaf7]/82 p-7 shadow-[0_24px_80px_rgba(89,31,45,0.12)] backdrop-blur-xl lg:grid-cols-[320px_1fr] lg:p-8">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#7b1e2b]">
+                Shot {currentShotNumber} of {shotCount}
+              </p>
+              <h2 className="mt-3 text-2xl font-medium text-[#351721]" style={titleFont}>
+                Review this shot
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[#684a57]">
+                {isHost
+                  ? "Choose whether to keep this shot or retake it before moving forward."
+                  : "Waiting for the room owner to continue, retake, or finish the session."}
+              </p>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <button
+                  type="button"
+                  onClick={retakeShot}
+                  disabled={!isHost}
+                  className="rounded-2xl border border-[#9a3445]/35 bg-white px-6 py-3 font-semibold text-[#7b1e2b] transition hover:bg-[#fff1f1] focus:outline-none focus:ring-4 focus:ring-[#d8a3ad] disabled:cursor-not-allowed disabled:text-[#b99aa4]"
+                >
+                  ถ่ายใหม่อีกครั้ง
+                </button>
+                {isLastPendingShot ? (
+                  <button
+                    type="button"
+                    onClick={finishCapture}
+                    disabled={!isHost}
+                    className="rounded-2xl bg-[#7b1e2b] px-6 py-3 font-semibold text-[#fff8f4] transition hover:bg-[#641725] focus:outline-none focus:ring-4 focus:ring-[#d8a3ad] disabled:cursor-not-allowed disabled:bg-[#c8a8b2]"
+                  >
+                    เสร็จสิ้น
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={continueToNextShot}
+                    disabled={!isHost}
+                    className="rounded-2xl bg-[#7b1e2b] px-6 py-3 font-semibold text-[#fff8f4] transition hover:bg-[#641725] focus:outline-none focus:ring-4 focus:ring-[#d8a3ad] disabled:cursor-not-allowed disabled:bg-[#c8a8b2]"
+                  >
+                    ถ่ายต่อ
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pendingShot}
+                alt={`Preview shot ${currentShotNumber}`}
+                className="max-h-[560px] rounded-[28px] border border-[#9a3445]/30 bg-white object-contain shadow-[0_24px_80px_rgba(89,31,45,0.14)]"
+              />
+            </div>
+          </section>
+        )}
+
+        {captureState === "framing" && (
+          <section className="grid gap-6 rounded-[32px] border border-[#9a3445]/25 bg-[#fffaf7]/82 p-7 shadow-[0_24px_80px_rgba(89,31,45,0.12)] backdrop-blur-xl lg:grid-cols-[300px_1fr] lg:p-8">
+            <div>
+              <h2 className="text-2xl font-medium text-[#351721]" style={titleFont}>
+                Choose frame style
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[#684a57]">
+                {isHost
+                  ? "Pick one frame style. The final download page will open for both people."
+                  : "Waiting for the room owner to choose the final frame style."}
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {frameStyles.map((style) => (
+                <button
+                  key={style.id}
+                  type="button"
+                  onClick={() => selectFrame(style.id)}
+                  disabled={!isHost}
+                  className="min-h-36 rounded-[24px] border border-[#9a3445]/25 p-4 text-left shadow-[0_14px_34px_rgba(89,31,45,0.10)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#d8a3ad] disabled:cursor-not-allowed disabled:opacity-70"
+                  style={{ background: style.background, color: style.text }}
+                >
+                  <span className="block rounded-2xl px-4 py-3 text-base font-semibold" style={{ background: style.mat, color: style.accent }}>
+                    {style.name}
+                  </span>
+                  <span className="mt-4 block h-4 w-24 rounded-full" style={{ background: style.accent }} />
+                  {selectedFrameId === style.id && (
+                    <span className="mt-4 inline-flex rounded-full border px-3 py-1 text-xs font-semibold" style={{ borderColor: style.accent }}>
+                      Selected
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         {countdown !== null && (
           <div className="fixed inset-0 z-20 grid place-items-center bg-[#351721]/72 backdrop-blur-md">
@@ -341,7 +516,7 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
                 <div className="grid w-full max-w-lg gap-4">
                   {shots.map((shot, index) => (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img key={shot} src={shot} alt={`Captured shot ${index + 1}`} className="rounded-2xl border border-[#9a3445]/25" />
+                    <img key={`${index}-${shot}`} src={shot} alt={`Captured shot ${index + 1}`} className="rounded-2xl border border-[#9a3445]/25" />
                   ))}
                 </div>
               )}

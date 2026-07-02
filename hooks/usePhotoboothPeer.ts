@@ -5,9 +5,10 @@ import type Peer from "peerjs";
 import type { DataConnection, MediaConnection } from "peerjs";
 
 export type PeerMessage =
-  | { type: "capture:start"; at: number }
-  | { type: "capture:shot"; index: number }
-  | { type: "capture:done" };
+  | { type: "capture:start"; at: number; reset?: boolean }
+  | { type: "capture:retake"; at: number }
+  | { type: "capture:accept"; next: "capture" | "frame"; at?: number }
+  | { type: "frame:selected"; styleId: string };
 
 type ConnectionStatus =
   | "idle"
