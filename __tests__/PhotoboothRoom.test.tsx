@@ -136,3 +136,48 @@ describe("PhotoboothRoom", () => {
     expect(await screen.findByRole("button", { name: /start capture/i })).toBeDisabled();
     expect(screen.getByText(/your host will start/i)).toBeInTheDocument();
   });
+
+describe("shared photo output", () => {
+  afterEach(() => jest.useRealTimers());
+
+  it("sends the host's captured shot to the guest", async () => {
+    mockConnectedPeer();
+    sendMessage.mockClear();
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+
+    await user.click(await screen.findByRole("button", { name: /start capture/i }));
+    const start = sendMessage.mock.calls.find(([message]) => message.type === "capture:start")?.[0];
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith({
+      type: "capture:shot",
+      at: start.at,
+      image: "data:image/png;base64,mock-strip",
+    });
+  });
+
+  it("uses the host's shot and final PNG on the guest", async () => {
+    let onMessage: Parameters<typeof usePhotoboothPeer>[0]["onMessage"] | undefined;
+    mockedUsePhotoboothPeer.mockImplementation((options) => {
+      onMessage = options.onMessage;
+      return {
+        status: "connected", error: null, isHost: false,
+        remoteStream: new MediaStream(), sendMessage,
+      };
+    });
+    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    const at = Date.now() + 10000;
+
+    act(() => onMessage?.({ type: "capture:start", at, reset: true }));
+    act(() => onMessage?.({ type: "capture:shot", at, image: "data:image/png;base64,host-shot" }));
+    expect(screen.getByAltText("Preview shot 1")).toHaveAttribute("src", "data:image/png;base64,host-shot");
+
+    act(() => onMessage?.({ type: "capture:accept", next: "frame" }));
+    act(() => onMessage?.({ type: "frame:result", styleId: "film", image: "data:image/png;base64,host-result" }));
+    expect(screen.getByRole("link", { name: /download photo/i })).toHaveAttribute("href", "data:image/png;base64,host-result");
+  });
+});

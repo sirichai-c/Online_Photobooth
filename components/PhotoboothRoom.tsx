@@ -39,6 +39,9 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activeShotAtRef = useRef<number | null>(null);
+  const isHostRef = useRef(false);
+  const sendMessageRef = useRef<(message: PeerMessage) => void>(() => {});
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
@@ -153,7 +156,7 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     context.font = "500 22px Arial";
     context.fillText(frameStyle.name, stripWidth / 2, stripHeight - 64);
     context.fillText(new Date().toLocaleDateString(), stripWidth / 2, stripHeight - 32);
-    setDownloadUrl(canvas.toDataURL("image/png"));
+    return canvas.toDataURL("image/png");
   }, []);
 
   const captureOneShot = useCallback(() => {
@@ -184,20 +187,25 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     return canvas.toDataURL("image/png");
   }, []);
 
-  const takeCurrentShot = useCallback(async () => {
+  const takeCurrentShot = useCallback(async (at: number) => {
     setCaptureState("shooting");
     setPendingShot(null);
 
     await new Promise((resolve) => window.setTimeout(resolve, shotDelayMs));
+    if (activeShotAtRef.current !== at || !isHostRef.current) {
+      return;
+    }
     const shot = captureOneShot();
     if (shot) {
       setPendingShot(shot);
+      sendMessageRef.current({ type: "capture:shot", at, image: shot });
     }
     setCaptureState("review");
   }, [captureOneShot]);
 
   const startCountdown = useCallback(
     (startAt: number, reset = false) => {
+      activeShotAtRef.current = startAt;
       if (reset) {
         setShots([]);
         setDownloadUrl(null);
@@ -209,12 +217,15 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
       setPendingShot(null);
 
       const tick = () => {
+        if (activeShotAtRef.current !== startAt) {
+          return;
+        }
         const remaining = Math.ceil((startAt - Date.now()) / 1000);
         setCountdown(Math.max(remaining, 0));
 
         if (remaining <= 0) {
           setCountdown(null);
-          takeCurrentShot();
+          takeCurrentShot(startAt);
           return;
         }
 
@@ -250,8 +261,12 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     (styleId: string) => {
       const frameStyle = frameStyles.find((style) => style.id === styleId) ?? frameStyles[0];
       setSelectedFrameId(frameStyle.id);
-      setCaptureState("complete");
-      buildStrip(shots, frameStyle);
+      void buildStrip(shots, frameStyle).then((image) => {
+        if (!image) return;
+        setDownloadUrl(image);
+        setCaptureState("complete");
+        sendMessageRef.current({ type: "frame:result", styleId: frameStyle.id, image });
+      });
     },
     [buildStrip, shots],
   );
@@ -264,14 +279,25 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
       if (message.type === "capture:retake") {
         startCountdown(message.at);
       }
+      if (message.type === "capture:shot" && message.at === activeShotAtRef.current) {
+        activeShotAtRef.current = null;
+        setCountdown(null);
+        setPendingShot(message.image);
+        setCaptureState("review");
+      }
       if (message.type === "capture:accept") {
         acceptPendingShot(message.next, message.at);
       }
       if (message.type === "frame:selected") {
-        applyFrameStyle(message.styleId);
+        setSelectedFrameId(message.styleId);
+      }
+      if (message.type === "frame:result") {
+        setSelectedFrameId(message.styleId);
+        setDownloadUrl(message.image);
+        setCaptureState("complete");
       }
     },
-    [acceptPendingShot, applyFrameStyle, startCountdown],
+    [acceptPendingShot, startCountdown],
   );
 
   const { status, error, isHost, remoteStream, sendMessage } = usePhotoboothPeer({
@@ -279,6 +305,8 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     localStream,
     onMessage: handlePeerMessage,
   });
+  isHostRef.current = isHost;
+  sendMessageRef.current = sendMessage;
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
