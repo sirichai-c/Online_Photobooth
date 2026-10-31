@@ -54,7 +54,15 @@ button:disabled { cursor: not-allowed; }
 .landing-shell::after { position: absolute; inset: 0; content: ""; pointer-events: none; opacity: .12; background-image: radial-gradient(#fff 0.5px, transparent 0.5px); background-size: 7px 7px; mask-image: linear-gradient(90deg, transparent 35%, #000); }
 .landing-header, .landing-grid, .landing-footer { position: relative; z-index: 1; }
 .landing-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.header-controls { display: flex; align-items: center; gap: 18px; }
 .header-note { color: #c9c0cf; font-size: 13px; letter-spacing: .02em; }
+.language-switcher { display: inline-flex; flex: none; gap: 3px; border-radius: 999px; padding: 3px; }
+.language-switcher button { min-width: 40px; min-height: 34px; border: 0; border-radius: 999px; padding: 6px 10px; color: inherit; background: transparent; font: inherit; font-size: 11px; font-weight: 850; letter-spacing: .05em; cursor: pointer; }
+.language-switcher-light { border: 1px solid rgba(255,255,255,.2); color: #d8cfdd; background: rgba(255,255,255,.06); }
+.language-switcher-light button[aria-pressed="true"] { color: #2d2130; background: #fff8f4; }
+.language-switcher-dark { border: 1px solid #ded5de; color: #776c7a; background: #fff; }
+.language-switcher-dark button[aria-pressed="true"] { color: #fff; background: #39283c; }
+.language-switcher button:focus-visible { outline: 3px solid rgba(240,120,107,.45); outline-offset: 2px; }
 .landing-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(420px, .95fr); align-items: center; flex: 1; gap: clamp(24px, 5vw, 88px); padding-block: 44px 55px; }
 .landing-content { max-width: 630px; }
 .landing-kicker { display: flex; align-items: center; gap: 10px; margin: 0 0 24px; color: #edc8c3; font-size: 14px; font-weight: 650; }
@@ -227,6 +235,7 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 600px) {
   .landing-shell { padding: 22px 20px 24px; }
   .header-note, .room-topbar-note { display: none; }
+  .header-controls { gap: 0; }
   .landing-grid { gap: 12px; padding: 56px 0 40px; }
   .landing-content h1 { font-size: clamp(51px, 13vw, 72px); }
   .landing-description { margin-top: 22px; font-size: 15px; }

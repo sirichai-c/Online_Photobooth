@@ -1,7 +1,9 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PhotoboothRoom } from "@/components/PhotoboothRoom";
+import { LanguageProvider } from "@/components/LanguageProvider";
 import { usePhotoboothPeer } from "@/hooks/usePhotoboothPeer";
+import { LANGUAGE_STORAGE_KEY } from "@/lib/i18n";
 
 jest.mock("@/hooks/usePhotoboothPeer");
 
@@ -18,6 +20,18 @@ function mockConnectedPeer() {
   });
 }
 
+function renderRoom() {
+  return render(
+    <LanguageProvider>
+      <PhotoboothRoom roomCode="BQPCRQ" />
+    </LanguageProvider>,
+  );
+}
+
+beforeEach(() => {
+  window.localStorage.setItem(LANGUAGE_STORAGE_KEY, "en");
+});
+
 describe("PhotoboothRoom", () => {
   beforeEach(() => {
     sendMessage.mockClear();
@@ -29,7 +43,7 @@ describe("PhotoboothRoom", () => {
   });
 
   it("renders room details and video panels", async () => {
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    renderRoom();
 
     expect(screen.getByRole("heading", { name: /room bqpcrq/i })).toBeInTheDocument();
     expect(screen.getByText("You")).toBeInTheDocument();
@@ -37,8 +51,23 @@ describe("PhotoboothRoom", () => {
     expect(await screen.findByRole("button", { name: /start capture/i })).toBeEnabled();
   });
 
+  it("renders Thai by default and can switch the room to English", async () => {
+    window.localStorage.clear();
+    const user = userEvent.setup();
+    renderRoom();
+
+    expect(screen.getByRole("heading", { name: "ห้อง BQPCRQ" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "เริ่มถ่ายภาพ" })).toBeEnabled();
+    expect(screen.getByText("เชื่อมต่อแล้ว")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "English" }));
+
+    expect(screen.getByRole("heading", { name: /room bqpcrq/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start capture/i })).toBeEnabled();
+  });
+
   it("requests camera access on mount", async () => {
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    renderRoom();
 
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith(expect.objectContaining({
       audio: true,
@@ -48,7 +77,7 @@ describe("PhotoboothRoom", () => {
 
   it("sends a synchronized capture event when Start Capture is clicked", async () => {
     const user = userEvent.setup();
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    renderRoom();
 
     await user.click(await screen.findByRole("button", { name: /start capture/i }));
 
@@ -62,22 +91,22 @@ describe("PhotoboothRoom", () => {
   it("shows host controls to retake or continue after a shot is captured", async () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    renderRoom();
 
     await user.click(await screen.findByRole("button", { name: /start capture/i }));
     await act(async () => {
       jest.advanceTimersByTime(5000);
     });
 
-    expect(await screen.findByRole("button", { name: "ถ่ายใหม่อีกครั้ง" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "ถ่ายต่อ" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Retake" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
     expect(screen.getByAltText(/preview shot 1/i)).toBeInTheDocument();
   });
 
   it("moves to host frame selection after the fourth accepted shot", async () => {
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    renderRoom();
 
     await user.click(await screen.findByRole("button", { name: /start capture/i }));
 
@@ -85,13 +114,13 @@ describe("PhotoboothRoom", () => {
       await act(async () => {
         jest.advanceTimersByTime(5000);
       });
-      await user.click(await screen.findByRole("button", { name: "ถ่ายต่อ" }));
+      await user.click(await screen.findByRole("button", { name: "Continue" }));
     }
 
     await act(async () => {
       jest.advanceTimersByTime(5000);
     });
-    await user.click(await screen.findByRole("button", { name: "เสร็จสิ้น" }));
+    await user.click(await screen.findByRole("button", { name: "Finish" }));
 
     expect(await screen.findByRole("heading", { name: /choose frame style/i })).toBeInTheDocument();
 
@@ -102,7 +131,7 @@ describe("PhotoboothRoom", () => {
   it("shows an error when camera permissions are denied", async () => {
     navigator.mediaDevices.getUserMedia = jest.fn().mockRejectedValue(new Error("Permission denied"));
 
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    renderRoom();
 
     expect(await screen.findByText("Permission denied")).toBeInTheDocument();
   });
@@ -116,7 +145,7 @@ describe("PhotoboothRoom", () => {
       sendMessage,
     });
 
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    renderRoom();
 
     expect(await screen.findByRole("button", { name: /start capture/i })).toBeDisabled();
     expect(screen.getByText(/waiting for partner/i)).toBeInTheDocument();
@@ -131,7 +160,7 @@ describe("PhotoboothRoom", () => {
       sendMessage,
     });
 
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    renderRoom();
 
     expect(await screen.findByRole("button", { name: /start capture/i })).toBeDisabled();
     expect(screen.getByText(/your host will start/i)).toBeInTheDocument();
@@ -145,7 +174,7 @@ describe("shared photo output", () => {
     sendMessage.mockClear();
     jest.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    renderRoom();
 
     await user.click(await screen.findByRole("button", { name: /start capture/i }));
     const start = sendMessage.mock.calls.find(([message]) => message.type === "capture:start")?.[0];
@@ -169,15 +198,19 @@ describe("shared photo output", () => {
         remoteStream: new MediaStream(), sendMessage,
       };
     });
-    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+    window.localStorage.clear();
+    renderRoom();
+    await act(async () => {
+      await Promise.resolve();
+    });
     const at = Date.now() + 10000;
 
     act(() => onMessage?.({ type: "capture:start", at, reset: true }));
     act(() => onMessage?.({ type: "capture:shot", at, image: "data:image/png;base64,host-shot" }));
-    expect(screen.getByAltText("Preview shot 1")).toHaveAttribute("src", "data:image/png;base64,host-shot");
+    expect(screen.getByAltText("ตัวอย่างภาพที่ 1")).toHaveAttribute("src", "data:image/png;base64,host-shot");
 
     act(() => onMessage?.({ type: "capture:accept", next: "frame" }));
     act(() => onMessage?.({ type: "frame:result", styleId: "film", image: "data:image/png;base64,host-result" }));
-    expect(screen.getByRole("link", { name: /download photo/i })).toHaveAttribute("href", "data:image/png;base64,host-result");
+    expect(screen.getByRole("link", { name: "ดาวน์โหลดภาพ" })).toHaveAttribute("href", "data:image/png;base64,host-result");
   });
 });

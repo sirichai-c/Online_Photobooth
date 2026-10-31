@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import Link from "next/link";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useLanguage } from "@/components/LanguageProvider";
 import { usePhotoboothPeer } from "@/hooks/usePhotoboothPeer";
 import type { PeerMessage } from "@/hooks/usePhotoboothPeer";
+import { translations } from "@/lib/i18n";
 
 type PhotoboothRoomProps = {
   roomCode: string;
@@ -13,8 +16,7 @@ type PhotoboothRoomProps = {
 type CaptureState = "idle" | "countdown" | "shooting" | "review" | "framing" | "complete";
 type NextStep = "capture" | "frame";
 type FrameStyle = {
-  id: string;
-  name: string;
+  id: keyof typeof translations.en.room.frames;
   background: string;
   mat: string;
   accent: string;
@@ -29,13 +31,16 @@ const pairHeight = 560;
 const stripPadding = 48;
 const stripGap = 28;
 const frameStyles: FrameStyle[] = [
-  { id: "classic", name: "Classic Rose", background: "#fff6f3", mat: "#ffffff", accent: "#7b1e2b", text: "#705066" },
-  { id: "midnight", name: "Midnight", background: "#241820", mat: "#fffaf7", accent: "#d9adbd", text: "#fff8f4" },
-  { id: "film", name: "Film Strip", background: "#f5f0e8", mat: "#161616", accent: "#a23d4f", text: "#3d332d" },
-  { id: "soft", name: "Soft Bloom", background: "#f8eef3", mat: "#ffffff", accent: "#8f6aa8", text: "#5d466c" },
+  { id: "classic", background: "#fff6f3", mat: "#ffffff", accent: "#7b1e2b", text: "#705066" },
+  { id: "midnight", background: "#241820", mat: "#fffaf7", accent: "#d9adbd", text: "#fff8f4" },
+  { id: "film", background: "#f5f0e8", mat: "#161616", accent: "#a23d4f", text: "#3d332d" },
+  { id: "soft", background: "#f8eef3", mat: "#ffffff", accent: "#8f6aa8", text: "#5d466c" },
 ];
 
 export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
+  const { language } = useLanguage();
+  const copy = translations[language];
+  const room = copy.room;
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -48,7 +53,7 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [shots, setShots] = useState<string[]>([]);
   const [pendingShot, setPendingShot] = useState<string | null>(null);
-  const [selectedFrameId, setSelectedFrameId] = useState(frameStyles[0].id);
+  const [selectedFrameId, setSelectedFrameId] = useState<string>(frameStyles[0].id);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -113,7 +118,12 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     context.drawImage(video, sourceX, sourceY, cropWidth, cropHeight, x, y, width, height);
   };
 
-  const buildStrip = useCallback(async (capturedShots: string[], frameStyle: FrameStyle) => {
+  const buildStrip = useCallback(async (
+    capturedShots: string[],
+    frameStyle: FrameStyle,
+    frameName: string,
+    dateLocale: string,
+  ) => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
 
@@ -154,8 +164,8 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
 
     context.fillStyle = frameStyle.text;
     context.font = "500 22px Arial";
-    context.fillText(frameStyle.name, stripWidth / 2, stripHeight - 64);
-    context.fillText(new Date().toLocaleDateString(), stripWidth / 2, stripHeight - 32);
+    context.fillText(frameName, stripWidth / 2, stripHeight - 64);
+    context.fillText(new Date().toLocaleDateString(dateLocale), stripWidth / 2, stripHeight - 32);
     return canvas.toDataURL("image/png");
   }, []);
 
@@ -261,14 +271,14 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     (styleId: string) => {
       const frameStyle = frameStyles.find((style) => style.id === styleId) ?? frameStyles[0];
       setSelectedFrameId(frameStyle.id);
-      void buildStrip(shots, frameStyle).then((image) => {
+      void buildStrip(shots, frameStyle, room.frames[frameStyle.id], room.dateLocale).then((image) => {
         if (!image) return;
         setDownloadUrl(image);
         setCaptureState("complete");
         sendMessageRef.current({ type: "frame:result", styleId: frameStyle.id, image });
       });
     },
-    [buildStrip, shots],
+    [buildStrip, room, shots],
   );
 
   const handlePeerMessage = useCallback(
@@ -351,29 +361,32 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
     <main className="room-page">
       <div className="room-shell">
         <header className="room-topbar">
-          <Link href="/" className="brand brand-dark" aria-label="LDR Photobooth home">
+          <Link href="/" className="brand brand-dark" aria-label={room.homeLabel}>
             <span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span>
             <span>LDR Photobooth</span>
           </Link>
-          <span className="room-topbar-note">A little moment, together.</span>
+          <div className="header-controls">
+            <span className="room-topbar-note">{copy.common.tagline}</span>
+            <LanguageSwitcher />
+          </div>
         </header>
 
         <div className="room-heading-row">
           <div>
-            <p className="room-kicker">Your shared space</p>
-            <h1>Room {roomCode}</h1>
-            <p className="room-description">Share the code, turn on your cameras, and make a memory from anywhere.</p>
+            <p className="room-kicker">{room.sharedSpace}</p>
+            <h1>{room.room} {roomCode}</h1>
+            <p className="room-description">{room.description}</p>
           </div>
           <div className="room-meta">
             <div className="room-code-box">
-              <span>Invite code</span>
+              <span>{room.inviteCode}</span>
               <strong>{roomCode}</strong>
             </div>
             <div className="connection-box">
               <span className={`connection-light connection-light-${status}`} aria-hidden="true" />
               <span className="connection-text">
-                <strong>{status}</strong>
-                <small>{isHost ? "Room host" : "Guest"}</small>
+                <strong>{room.statuses[status]}</strong>
+                <small>{isHost ? room.roomHost : room.guest}</small>
               </span>
             </div>
           </div>
@@ -381,38 +394,38 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
 
         {(cameraError || error) && (
           <div role="alert" className="room-alert">
-            <strong>Camera or connection needs attention</strong>
+            <strong>{room.alertTitle}</strong>
             <span>{cameraError || error}</span>
           </div>
         )}
 
         <div className="room-main-grid">
-          <section className="stage-panel" aria-label="Live camera preview">
+          <section className="stage-panel" aria-label={room.livePreviewLabel}>
             <div className="stage-heading">
               <div>
-                <p className="stage-eyebrow"><span className="live-dot" /> Live room</p>
-                <h2>{remoteStream ? "You’re both here." : "Waiting for your person."}</h2>
+                <p className="stage-eyebrow"><span className="live-dot" /> {room.liveRoom}</p>
+                <h2>{remoteStream ? room.bothHere : room.waitingPerson}</h2>
               </div>
-              <span className="stage-side-note">Two places. One frame.</span>
+              <span className="stage-side-note">{room.stageSideNote}</span>
             </div>
             <div className="video-grid">
-              <VideoPanel label="You" videoRef={localVideoRef} muted />
-              <VideoPanel label="Partner" videoRef={remoteVideoRef} waiting={!remoteStream} />
+              <VideoPanel label={room.you} videoRef={localVideoRef} muted waitingTitle={room.waitingPartner} waitingDescription={room.shareRoomCode} />
+              <VideoPanel label={room.partner} videoRef={remoteVideoRef} waiting={!remoteStream} waitingTitle={room.waitingPartner} waitingDescription={room.shareRoomCode} />
             </div>
             <p className="stage-footnote">
-              {captureState === "complete" ? "Save your strip below or start another session." : remoteStream ? "You're ready to capture your first moment." : "Keep this page open while your partner joins with the room code."}
+              {captureState === "complete" ? room.completeFootnote : remoteStream ? room.readyFootnote : room.waitingFootnote}
             </p>
           </section>
 
           <aside className="session-panel">
             <div className="session-heading">
               <span className="session-icon" aria-hidden="true">✳</span>
-              <p>Photo session</p>
-              <h2>Four moments, one strip.</h2>
+              <p>{room.photoSession}</p>
+              <h2>{room.fourMoments}</h2>
             </div>
             <div className="session-progress">
-              <div className="progress-heading"><span>Your photos</span><strong>{shots.length} / {shotCount}</strong></div>
-              <ol aria-label="Photo progress">
+              <div className="progress-heading"><span>{room.yourPhotos}</span><strong>{shots.length} / {shotCount}</strong></div>
+              <ol aria-label={room.photoProgress}>
                 {Array.from({ length: shotCount }, (_, index) => (
                   <li className={index < shots.length ? "progress-done" : index === shots.length ? "progress-current" : ""} key={index}>
                     <span>{String(index + 1).padStart(2, "0")}</span>
@@ -421,16 +434,16 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
               </ol>
             </div>
             <p className="session-explainer">
-              The countdown runs on both screens. Keep each photo or take it again before moving on.
+              {room.explainer}
             </p>
             <button type="button" onClick={startCapture} disabled={!canCapture} className="button button-coral session-start">
-              {captureState === "complete" ? "Take Another Strip" : "Start Capture"} <span aria-hidden="true">✳</span>
+              {captureState === "complete" ? room.takeAnother : room.startCapture} <span aria-hidden="true">✳</span>
             </button>
             {!isHost && status === "connected" && (
-              <p className="session-hint">Your host will start the photo session.</p>
+              <p className="session-hint">{room.guestHint}</p>
             )}
             {status !== "connected" && (
-              <p className="session-hint">The button unlocks when both cameras are connected.</p>
+              <p className="session-hint">{room.connectionHint}</p>
             )}
           </aside>
         </div>
@@ -438,29 +451,29 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
         {captureState === "review" && pendingShot && (
           <section className="flow-panel review-panel">
             <div className="flow-copy">
-              <p className="flow-step">Photo {currentShotNumber} of {shotCount}</p>
-              <h2>Keep this one?</h2>
+              <p className="flow-step">{room.photoStep(currentShotNumber, shotCount)}</p>
+              <h2>{room.keepThis}</h2>
               <p>{isHost
-                ? "Take a look together. You can keep this photo or try once more."
-                : "Your host will choose whether to keep this photo or take it again."}</p>
+                ? room.hostReview
+                : room.guestReview}</p>
               <div className="review-actions">
                 <button type="button" onClick={retakeShot} disabled={!isHost} className="button button-outline">
-                  ถ่ายใหม่อีกครั้ง
+                  {room.retake}
                 </button>
                 {isLastPendingShot ? (
                   <button type="button" onClick={finishCapture} disabled={!isHost} className="button button-dark">
-                    เสร็จสิ้น
+                    {room.finish}
                   </button>
                 ) : (
                   <button type="button" onClick={continueToNextShot} disabled={!isHost} className="button button-dark">
-                    ถ่ายต่อ
+                    {room.continue}
                   </button>
                 )}
               </div>
             </div>
             <div className="review-image-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={pendingShot} alt={`Preview shot ${currentShotNumber}`} />
+              <img src={pendingShot} alt={room.previewShotAlt(currentShotNumber)} />
             </div>
           </section>
         )}
@@ -468,11 +481,11 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
         {captureState === "framing" && (
           <section className="flow-panel frame-panel">
             <div className="flow-copy">
-              <p className="flow-step">The finishing touch</p>
-              <h2>Choose frame style</h2>
+              <p className="flow-step">{room.finishingTouch}</p>
+              <h2>{room.chooseFrameStyle}</h2>
               <p>{isHost
-                ? "Pick the look that feels like your moment. Your partner will see it too."
-                : "Your host is choosing the finishing touch."}</p>
+                ? room.frameHost
+                : room.frameGuest}</p>
             </div>
             <div className="frame-grid">
               {frameStyles.map((style) => (
@@ -489,8 +502,8 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
                     <span style={{ background: style.mat }} />
                     <span style={{ background: style.accent }} />
                   </span>
-                  <span className="frame-name">{style.name}</span>
-                  <span className="frame-indicator">{selectedFrameId === style.id ? "Selected" : "Choose frame"}</span>
+                  <span className="frame-name">{room.frames[style.id]}</span>
+                  <span className="frame-indicator">{selectedFrameId === style.id ? room.selected : room.chooseFrame}</span>
                 </button>
               ))}
             </div>
@@ -500,24 +513,24 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
         {(shots.length > 0 || downloadUrl) && (
           <section className="flow-panel result-panel">
             <div className="flow-copy">
-              <p className="flow-step">Your keepsake</p>
-              <h2>{captureState === "complete" ? "Made together. Kept forever." : "Your moments so far."}</h2>
-              <p>{captureState === "complete" ? "Your four-cut strip is ready to save." : `Captured ${shots.length} of ${shotCount} photos.`}</p>
+              <p className="flow-step">{room.keepsake}</p>
+              <h2>{captureState === "complete" ? room.madeTogether : room.momentsSoFar}</h2>
+              <p>{captureState === "complete" ? room.readySave : room.captured(shots.length, shotCount)}</p>
               {downloadUrl && (
                 <a href={downloadUrl} download={`ldr-photobooth-${roomCode}.png`} className="button button-dark download-button">
-                  Download Photo <span aria-hidden="true">↓</span>
+                  {room.downloadPhoto} <span aria-hidden="true">↓</span>
                 </a>
               )}
             </div>
             <div className="result-preview">
               {downloadUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={downloadUrl} alt="Four-cut photobooth result" className="result-strip" />
+                <img src={downloadUrl} alt={room.resultAlt} className="result-strip" />
               ) : (
                 <div className="result-shots">
                   {shots.map((shot, index) => (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img key={index} src={shot} alt={`Captured shot ${index + 1}`} />
+                    <img key={index} src={shot} alt={room.capturedShotAlt(index + 1)} />
                   ))}
                 </div>
               )}
@@ -528,9 +541,9 @@ export function PhotoboothRoom({ roomCode }: PhotoboothRoomProps) {
         {countdown !== null && (
           <div className="countdown-overlay" role="status" aria-live="assertive">
             <div className="countdown-content">
-              <p>Here we go</p>
-              <span>{countdown || "Go"}</span>
-              <small>Hold that moment</small>
+              <p>{room.hereWeGo}</p>
+              <span>{countdown || room.go}</span>
+              <small>{room.holdMoment}</small>
             </div>
           </div>
         )}
@@ -545,9 +558,11 @@ type VideoPanelProps = {
   videoRef: RefObject<HTMLVideoElement | null>;
   muted?: boolean;
   waiting?: boolean;
+  waitingTitle: string;
+  waitingDescription: string;
 };
 
-function VideoPanel({ label, videoRef, muted = false, waiting = false }: VideoPanelProps) {
+function VideoPanel({ label, videoRef, muted = false, waiting = false, waitingTitle, waitingDescription }: VideoPanelProps) {
   return (
     <div className="video-panel">
       <div className="video-frame">
@@ -555,8 +570,8 @@ function VideoPanel({ label, videoRef, muted = false, waiting = false }: VideoPa
         {waiting && (
           <div className="video-waiting">
             <span className="waiting-spark" aria-hidden="true">✳</span>
-            <strong>Waiting for partner</strong>
-            <span>Share the room code to bring them in.</span>
+            <strong>{waitingTitle}</strong>
+            <span>{waitingDescription}</span>
           </div>
         )}
         <div className="video-label"><span className="video-label-dot" /> {label}</div>
