@@ -4,8 +4,6 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRoomCode } from "@/lib/roomCode";
 
-const titleFont = { fontFamily: '"Bodoni MT", "Bodoni 72", Didot, Georgia, "Times New Roman", serif' };
-
 export function LandingPage() {
   const router = useRouter();
   const [roomCode, setRoomCode] = useState("");
@@ -24,50 +22,76 @@ export function LandingPage() {
   };
 
   return (
-      <section className="w-full max-w-2xl rounded-[32px] border border-[#9a3445]/25 bg-[#fffaf7]/82 p-8 shadow-[0_24px_80px_rgba(89,31,45,0.14)] backdrop-blur-xl md:p-12">
-        <div className="mb-10">
-          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-[#7b1e2b]">
-            Free LDR Photobooth
-          </p>
-          <h1 className="text-4xl font-medium leading-tight text-[#351721] md:text-6xl" style={titleFont}>
-            Take a four-cut strip together from anywhere.
-          </h1>
-          <p className="mt-6 max-w-xl text-base leading-7 text-[#684a57]">
-            Create a private peer-to-peer room, connect webcams, start the same countdown, and download one shared photo strip.
-          </p>
+    <div className="landing-shell">
+      <header className="landing-header">
+        <div className="brand brand-light" aria-label="LDR Photobooth">
+          <span className="brand-mark" aria-hidden="true"><i /><i /><i /><i /></span>
+          <span>LDR Photobooth</span>
         </div>
+        <span className="header-note">A little moment, together.</span>
+      </header>
 
-        <div className="grid gap-5">
-          <button
-            type="button"
-            onClick={createRoom}
-            className="rounded-2xl bg-[#7b1e2b] px-6 py-4 text-base font-semibold text-[#fff8f4] shadow-[0_14px_30px_rgba(123,30,43,0.22)] transition hover:bg-[#641725] focus:outline-none focus:ring-4 focus:ring-[#d8a3ad]"
-          >
-            Create a Room
-          </button>
+      <div className="landing-grid">
+        <section className="landing-content">
+          <p className="landing-kicker"><span className="kicker-dot" /> Made for two, anywhere</p>
+          <h1>Make a little moment <em>together.</em></h1>
+          <p className="landing-description">
+            Turn two cameras into one photo booth. Meet in a room, count down together,
+            and keep four little moments from wherever you are.
+          </p>
 
-          <form onSubmit={joinRoom} className="rounded-2xl border border-[#c58a99]/40 bg-white/78 p-4">
-            <label htmlFor="room-code" className="mb-3 block px-1 text-sm font-semibold text-[#5f3140]">
-              Join Room
-            </label>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <input
-                id="room-code"
-                value={roomCode}
-                onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
-                placeholder="ABCD"
-                maxLength={6}
-                className="min-h-12 flex-1 rounded-xl border border-[#c58a99]/50 bg-[#fffaf7] px-4 text-lg font-semibold uppercase tracking-[0.18em] text-[#351721] outline-none transition placeholder:text-[#b8909b] focus:border-[#7b1e2b]"
-              />
-              <button
-                type="submit"
-                className="min-h-12 rounded-xl bg-[#8f3a55] px-6 font-semibold text-[#fff8f4] transition hover:bg-[#773047] focus:outline-none focus:ring-4 focus:ring-[#d9adbd]"
-              >
-                Join
-              </button>
-            </div>
-          </form>
+          <div className="landing-actions">
+            <button type="button" onClick={createRoom} className="button button-coral button-large">
+              Create a Room
+              <span className="button-symbol" aria-hidden="true">↗</span>
+            </button>
+            <p className="action-hint">Start a room and share its code with your person.</p>
+
+            <div className="action-divider"><span>Already have a code?</span></div>
+
+            <form onSubmit={joinRoom} className="join-form">
+              <label htmlFor="room-code">Join Room</label>
+              <div className="join-fields">
+                <input
+                  id="room-code"
+                  value={roomCode}
+                  onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
+                  placeholder="Enter room code"
+                  maxLength={6}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button type="submit" className="button button-light">Join</button>
+              </div>
+              <p className="join-hint">Your code has 4–6 letters or numbers.</p>
+            </form>
+          </div>
+        </section>
+
+        <div className="landing-art" aria-hidden="true">
+          <div className="art-orbit art-orbit-one" />
+          <div className="art-orbit art-orbit-two" />
+          <div className="art-note art-note-top">you + me</div>
+          <div className="demo-strip">
+            <div className="demo-strip-header">LDR photo booth <span>♥</span></div>
+            {[0, 1, 2, 3].map((frame) => (
+              <div className={`demo-frame demo-frame-${frame + 1}`} key={frame}>
+                <div className="demo-half demo-half-left"><span className="demo-person demo-person-left" /></div>
+                <div className="demo-half demo-half-right"><span className="demo-person demo-person-right" /></div>
+              </div>
+            ))}
+            <div className="demo-strip-footer">The best days are the ones we make.</div>
+          </div>
+          <div className="art-note art-note-bottom">four frames, one memory</div>
+          <span className="art-spark art-spark-one">✳</span>
+          <span className="art-spark art-spark-two">✳</span>
         </div>
-      </section>
+      </div>
+
+      <footer className="landing-footer">
+        <span>No sign-up. Just your cameras and a room code.</span>
+        <span>Take the moment with you.</span>
+      </footer>
+    </div>
   );
 }

@@ -122,3 +122,17 @@ describe("PhotoboothRoom", () => {
     expect(screen.getByText(/waiting for partner/i)).toBeInTheDocument();
   });
 });
+  it("keeps the guest capture control disabled", async () => {
+    mockedUsePhotoboothPeer.mockReturnValue({
+      status: "connected",
+      error: null,
+      isHost: false,
+      remoteStream: new MediaStream(),
+      sendMessage,
+    });
+
+    render(<PhotoboothRoom roomCode="BQPCRQ" />);
+
+    expect(await screen.findByRole("button", { name: /start capture/i })).toBeDisabled();
+    expect(screen.getByText(/your host will start/i)).toBeInTheDocument();
+  });
